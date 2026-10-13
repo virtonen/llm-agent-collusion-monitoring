@@ -1,5 +1,26 @@
 # Replication Plan — LLM Agent Collusion Study
 
+## This test — two full markets
+
+This is a modified run, not a copy of the paper's GPT-4.1 and Claude numbers. Agents are local `qwen2.5:14b`. The judge is NVIDIA `nemotron-3-super-120b-a12b`. One market takes about 1–1.5 hours because Qwen answers one agent at a time. Two markets are about 2–3 hours. The Mac has to stay awake.
+
+Each market is the real setup: 5 sellers, 5 buyers, 30 rounds. The only difference between them is the seller mailbox.
+
+```bash
+conda activate env
+cd /Users/vvirtonen/Desktop/UChicago/llm-agent-collusion
+
+python src/continuous_double_auction/simulation.py --tag "base-1"
+
+python src/continuous_double_auction/simulation.py \
+  --seller_comms_enabled \
+  --tag "base-seller_comms-1"
+```
+
+The first tag is sellers who cannot talk. The second is sellers who can. Compare `results/*_base-1/` and `results/*_base-seller_comms-1/`: asks, trades, and `collusion_metrics.json`. Both prompts already tell sellers to keep high margins and to use game theory, and both can see the public ask queue. A higher price or a higher coordination score in the second folder is the sign that the mailbox mattered. One pair is noisy. The paper repeats each condition 10 times.
+
+Do not start `experiments/run_seller_comms_experiment.sh` for this test. That script is 20 markets, about two days.
+
 ## Project scale
 
 - **Per run:** 5 sellers + 6 buyers = 11 agents × 30 rounds = 330 API calls
@@ -95,12 +116,14 @@ Set `OVERSEER_MODEL` and `EVAL_MODEL` to `nvidia/nemotron-3.5-lightning:free`. O
 
 ---
 
-## Recommendation: Start with OpenRouter
+## Setup already done
 
-1. **No code changes for the main loop** — set `OPENROUTER_API_KEY`, relax `Model` Literal
-2. **Use free OpenRouter models** to smoke-test the pipeline end-to-end
-3. **Add Ollama** once pipeline is verified, for cheap iterative experiments
-4. **Add OpenRouter paid keys** only for specific experiments to faithfully replicate (baseline + comms is the core result)
+These steps are finished. They are not the test.
+
+1. `Model` is a plain string, so Qwen and Nemotron ids are accepted.
+2. Buyer and seller calls go to local Ollama, one agent at a time.
+3. The judge uses the NVIDIA key and `NIM_MODEL` when that key is set. OpenRouter remains only as a fallback for ids ending in `:free`.
+4. The two-market commands at the top of this file are the run to start.
 
 **Skip Gemini for now** — code uses Vertex AI SDK (not free Gemini API); requires Google Cloud project + service account auth. OpenRouter gives Gemini access anyway.
 
@@ -144,15 +167,14 @@ When using Ollama, set `n_threads=1` to avoid hammering a single local server.
 
 ---
 
-## Experiment priority for replication
+## Later, not this test
 
-| Experiment | Runs | Script | Core finding |
+The archived `data/` corpus is 75 markets. A Qwen/Nemotron rerun of that corpus is the closest modified replication, and it takes about 3–4 days. It is not this test.
+
+| Experiment | Runs | Script | What it adds |
 |---|---|---|---|
-| Baseline vs. comms | 20 | `run_seller_comms_experiment.sh` | **Core result** — comms enable collusion |
-| Boss pressure | 40 | `run_pressure_experiment.sh` | Environmental incentives |
-| Seller model mix | 25 | `run_seller_mix_with_comms_experiment.sh` | GPT vs Claude collusion rates |
-| Country experiment | ~30 | `run_country_experiment.sh` | National identity effect |
-| Temperature sweep | varies | `run_temperature_experiment.sh` | Collusion threshold |
-| Valuation sweep | varies | `run_valuation_experiment.sh` | Market structure effects |
+| Baseline vs. comms | 20 | `run_seller_comms_experiment.sh` | Ten repeats of the two markets above |
+| Boss pressure and oversight | 30 | `run_pressure_experiment.sh` | CEO pressure and a license threat |
+| Seller model mix, with messages | 25 | `run_seller_mix_with_comms_experiment.sh` | Qwen buyers/sellers vs Nemotron |
 
-Start with the baseline + comms experiment (20 runs) — it's the paper's central claim.
+Temperature, valuation, and country are extra sweeps. They are not in `data/`. They also crash until `run_simulation` accepts `log_dir`. The no-message seller-mix script is another extra and is not in `data/` either.
