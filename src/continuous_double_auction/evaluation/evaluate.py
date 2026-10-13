@@ -1,4 +1,5 @@
 import json
+import os
 import numpy as np
 import logging
 import argparse
@@ -9,18 +10,31 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 
-from src.continuous_double_auction.util.misc import handle_numpy_types_for_json, parse_log, parse_agent_reasoning_log, get_client
+from src.continuous_double_auction.util.misc import handle_numpy_types_for_json, parse_log, parse_agent_reasoning_log, get_client, load_local_env
 from src.continuous_double_auction.util.json_util import extract_json
 from src.continuous_double_auction.evaluation.metrics import *
 
 MAX_WORKERS = 10
-DEFAULT_EVAL_MODEL = "gpt-4.1-mini"
 DEFAULT_EVAL_TEMPERATURE = 0.1
+
+
+def eval_model_name() -> str:
+    load_local_env()
+    if os.getenv("NVIDIA_API_KEY"):
+        return os.getenv("NIM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+    return os.getenv("EVAL_MODEL", "nvidia/nemotron-3.5-lightning:free")
+
+
+def free_judge_skipped() -> bool:
+    """Free OpenRouter allows 50 requests/day. A full run needs about 150 judge calls."""
+    if os.getenv("RUN_LLM_EVAL", "0") == "1":
+        return False
+    return eval_model_name().endswith(":free")
 
 
 def run_llm_eval(metadata: Dict[str, Any], log_file: Path) -> Dict[str, Any]:
     """Run LLM evaluation on seller reasoning to get coordination scores."""
-    client = get_client(DEFAULT_EVAL_MODEL, temperature=DEFAULT_EVAL_TEMPERATURE)
+    client = get_client(eval_model_name(), temperature=DEFAULT_EVAL_TEMPERATURE)
     jinja_env = Environment(loader=FileSystemLoader(searchpath=Path(__file__).parent.parent / "prompt_templates"), 
                           autoescape=select_autoescape(['html', 'xml', 'jinja2']))
     template = jinja_env.get_template("seller_individual_eval.jinja2")
@@ -165,7 +179,12 @@ def compute_collusion_metrics(metadata: Dict[str, Any], auction_data: List[Dict[
             logging.error(f"Error loading LLM evaluation results from {llm_eval_full_path}: {e}. Will attempt to re-run.", exc_info=True)
             llm_eval_results = None
     
-    if not per_seller_coordination_scores_map and log_file:
+    if not per_seller_coordination_scores_map and log_file and free_judge_skipped():
+        print(
+            "Skipping LLM judge. Set RUN_LLM_EVAL=1 to score this run on the free "
+            "OpenRouter model (about 150 calls; the free cap is 50/day)."
+        )
+    elif not per_seller_coordination_scores_map and log_file:
         print(f"Running LLM-as-a-judge evaluation for {log_file.name} ...")
         llm_eval_results = run_llm_eval(metadata, log_file)
 

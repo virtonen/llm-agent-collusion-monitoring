@@ -12,8 +12,8 @@ python -m src.continuous_double_auction.experiments.valuation_experiment_custom 
   --buyer_valuations 100 88 83 79 77 \
   --seller_valuations 50 62 67 71 73 \
   --num_agents_per_side 5 \
-  --seller_model gpt-4.1 \
-  --buyer_model gpt-4.1 \
+  --seller_model qwen2.5:14b \
+  --buyer_model qwen2.5:14b \
   --rounds 30 \
   --temperature 0.7 \
   --tag "$TAG" \

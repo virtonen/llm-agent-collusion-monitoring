@@ -13,6 +13,29 @@ import google.api_core.exceptions
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
+
+def is_ollama_model(model_name: str) -> bool:
+    """Local Ollama tags (qwen2.5:14b, ollama/qwen2.5:14b). OpenRouter ids contain a slash."""
+    name = model_name.lower()
+    if name.startswith("ollama/"):
+        return True
+    if "/" in model_name or name.endswith(":free"):
+        return False
+    if name.startswith(("gpt", "claude", "gemini")):
+        return False
+    return True
+
+
+def is_nvidia_nim_model(model_name: str) -> bool:
+    """NVIDIA build.nvidia.com ids (org/name, no :free suffix) when a NIM key is set."""
+    if not os.getenv("NVIDIA_API_KEY"):
+        return False
+    if model_name.endswith(":free") or is_ollama_model(model_name):
+        return False
+    if model_name.lower().startswith(("gpt", "claude", "gemini")):
+        return False
+    return "/" in model_name
+
 class Message(TypedDict):
     role: str
     content: str
@@ -63,7 +86,11 @@ class ModelWrapper(ABC):
     @classmethod
     def create(cls, model_name: str, **kwargs) -> 'ModelWrapper':
         """Factory method to create appropriate model wrapper instance."""
-        if "gpt" in model_name.lower():
+        if is_ollama_model(model_name):
+            return OllamaModelWrapper(model_name, **kwargs)
+        elif is_nvidia_nim_model(model_name):
+            return NvidiaClient(model_name, **kwargs)
+        elif "gpt" in model_name.lower():
             return OpenAIClient(model_name, **kwargs)
         elif "claude" in model_name.lower():
             return AnthropicClient(model_name, **kwargs)
@@ -114,26 +141,34 @@ class OpenRouterClient(ModelWrapper):
 
     def __init__(self, model_name: str, **kwargs):
         super().__init__(model_name, **kwargs)
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY is not set. Add it to .env or the environment.")
         self.client = OpenAI(
             base_url = "https://openrouter.ai/api/v1",
-            api_key = os.getenv("OPENROUTER_API_KEY")
+            api_key = api_key,
+            timeout=120,
         )
     
     def generate(self, messages: List[Message]) -> str:
         for attempt in range(self.max_retries):
             try:
+                caller_params = {k: v for k, v in self.additional_params.items() if k != "extra_body"}
+                extra_body = {"reasoning": {"enabled": False}}
+                extra_body.update(self.additional_params.get("extra_body") or {})
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=messages,
                     temperature=self.temperature,
                     max_completion_tokens=self.max_tokens,
                     top_p=self.top_p,
-                    **self.additional_params
+                    extra_body=extra_body,
+                    **caller_params
                 )
                 return response.choices[0].message.content
             except APIError as e:
-                logger.warning(f"OpenRouter API error (attempt {attempt + 1}/{self.max_retries}): {str(e)} for prompt {messages}")
-                if attempt == self.max_retries - 1:
+                logger.warning(f"OpenRouter API error (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
+                if getattr(e, "status_code", None) == 403 or attempt == self.max_retries - 1:
                     logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
                     return None
                 self._exponential_backoff(attempt)
@@ -142,6 +177,90 @@ class OpenRouterClient(ModelWrapper):
          #TODO: implement batch API for message_lists that are sufficiently long
         responses = []
         for messages in tqdm(messages_list, desc='Batch Generation'):
+            responses.append(self.generate(messages))
+        return responses
+
+
+class NvidiaClient(ModelWrapper):
+    """OpenAI-compatible client for NVIDIA NIM free endpoints (build.nvidia.com)."""
+
+    def __init__(self, model_name: str, **kwargs):
+        super().__init__(model_name, **kwargs)
+        api_key = os.getenv("NVIDIA_API_KEY")
+        if not api_key:
+            raise ValueError("NVIDIA_API_KEY is not set. Create one at https://build.nvidia.com and add it to .env.")
+        self.client = OpenAI(
+            base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+            api_key=api_key,
+            timeout=180,
+        )
+
+    def generate(self, messages: List[Message]) -> str:
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    top_p=self.top_p,
+                    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                )
+                content = response.choices[0].message.content
+                if content:
+                    return content
+                logger.warning(f"NVIDIA NIM returned empty content (attempt {attempt + 1}/{self.max_retries})")
+            except APIError as e:
+                logger.warning(f"NVIDIA NIM API error (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
+                if getattr(e, "status_code", None) in (401, 403, 404) or attempt == self.max_retries - 1:
+                    logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
+                    return None
+            if attempt == self.max_retries - 1:
+                return None
+            self._exponential_backoff(attempt)
+
+    def batch_generate(self, messages_list: List[List[Message]]) -> List[str]:
+        responses = []
+        for messages in tqdm(messages_list, desc='NVIDIA Batch Generation'):
+            responses.append(self.generate(messages))
+        return responses
+
+
+class OllamaModelWrapper(ModelWrapper):
+    """OpenAI-compatible client for a local Ollama server."""
+
+    def __init__(self, model_name: str, **kwargs):
+        if model_name.lower().startswith("ollama/"):
+            model_name = model_name.split("/", 1)[1]
+        super().__init__(model_name, **kwargs)
+        self.client = OpenAI(
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+            api_key="ollama",
+            timeout=180,
+        )
+
+    def generate(self, messages: List[Message]) -> str:
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    top_p=self.top_p,
+                    **self.additional_params,
+                )
+                return response.choices[0].message.content
+            except APIError as e:
+                logger.warning(f"Ollama API error (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
+                if attempt == self.max_retries - 1:
+                    logger.error(f"Failed after {self.max_retries} attempts: {str(e)}")
+                    return None
+                self._exponential_backoff(attempt)
+
+    def batch_generate(self, messages_list: List[List[Message]]) -> List[str]:
+        responses = []
+        for messages in tqdm(messages_list, desc='Ollama Batch Generation'):
             responses.append(self.generate(messages))
         return responses
 

@@ -1,14 +1,13 @@
 from functools import total_ordering
 from pydantic import BaseModel, Field, model_validator
-from typing import Any, Dict, Literal, Optional, Self
+from typing import Any, Dict, Optional, Self
 
 
+# Frontier names kept for documentation. Validation is open so local and OpenRouter ids work.
 SUPPORTED_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", 
                     "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", 
                     "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-03-25"]
-Model = Literal["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", 
-                "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", 
-                "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-03-25"]
+Model = str
 
 class ExperimentParams(BaseModel):
     """

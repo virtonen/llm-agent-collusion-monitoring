@@ -2,49 +2,53 @@
 
 mkdir -p results
 
+# Modified mix: local Qwen stands in for GPT-4.1, NVIDIA Nemotron for Claude.
+QWEN="${AGENT_MODEL:-qwen2.5:14b}"
+NEMOTRON="${NIM_MODEL:-nvidia/nemotron-3-super-120b-a12b}"
+
 for i in {1..5}; do
 
-    # GPT Buyers
-    ## Claude Sellers
-    echo "Running experiment with tag gpt_buyers-claude_sellers-seller_comms-${i}"
+    # Qwen buyers
+    ## Nemotron sellers
+    echo "Running experiment with tag qwen_buyers-nemotron_sellers-seller_comms-${i}"
     python src/continuous_double_auction/simulation.py \
-        --buyer_models gpt-4.1 gpt-4.1 gpt-4.1 gpt-4.1 gpt-4.1 \
-        --seller_models claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest \
+        --buyer_models "$QWEN" "$QWEN" "$QWEN" "$QWEN" "$QWEN" \
+        --seller_models "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" \
         --seller_comms_enabled \
-        --tag "gpt_buyers-claude_sellers-seller_comms-${i}"
+        --tag "qwen_buyers-nemotron_sellers-seller_comms-${i}"
 
-    ## Mixed Sellers
-    echo "Running experiment with tag gpt_buyers-mixed_sellers-seller_comms-${i}"
+    ## Mixed sellers (3 Qwen, 2 Nemotron)
+    echo "Running experiment with tag qwen_buyers-mixed_sellers-seller_comms-${i}"
     python src/continuous_double_auction/simulation.py \
-        --buyer_models gpt-4.1 gpt-4.1 gpt-4.1 gpt-4.1 gpt-4.1 \
-        --seller_models gpt-4.1 gpt-4.1 gpt-4.1 claude-3-7-sonnet-latest claude-3-7-sonnet-latest \
+        --buyer_models "$QWEN" "$QWEN" "$QWEN" "$QWEN" "$QWEN" \
+        --seller_models "$QWEN" "$QWEN" "$QWEN" "$NEMOTRON" "$NEMOTRON" \
         --seller_comms_enabled \
-        --tag "gpt_buyers-mixed_sellers-seller_comms-${i}"
+        --tag "qwen_buyers-mixed_sellers-seller_comms-${i}"
 
-    # Claude Buyers
-    ## GPT Sellers
-    echo "Running experiment with tag claude_buyers-gpt_sellers-seller_comms-${i}"
+    # Nemotron buyers
+    ## Qwen sellers
+    echo "Running experiment with tag nemotron_buyers-qwen_sellers-seller_comms-${i}"
     python src/continuous_double_auction/simulation.py \
-        --buyer_models claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest \
-        --seller_models gpt-4.1 gpt-4.1 gpt-4.1 gpt-4.1 gpt-4.1 \
+        --buyer_models "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" \
+        --seller_models "$QWEN" "$QWEN" "$QWEN" "$QWEN" "$QWEN" \
         --seller_comms_enabled \
-        --tag "claude_buyers-gpt_sellers-seller_comms-${i}"
+        --tag "nemotron_buyers-qwen_sellers-seller_comms-${i}"
 
-    ## Claude Sellers
-    echo "Running experiment with tag claude_buyers-claude_sellers-seller_comms-${i}"
+    ## Nemotron sellers
+    echo "Running experiment with tag nemotron_buyers-nemotron_sellers-seller_comms-${i}"
     python src/continuous_double_auction/simulation.py \
-        --buyer_models claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest \
-        --seller_models claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest \
+        --buyer_models "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" \
+        --seller_models "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" \
         --seller_comms_enabled \
-        --tag "claude_buyers-claude_sellers-seller_comms-${i}"
+        --tag "nemotron_buyers-nemotron_sellers-seller_comms-${i}"
 
-    ## Mixed Sellers
-    echo "Running experiment with tag claude_buyers-mixed_sellers-seller_comms-${i}"
+    ## Mixed sellers (3 Qwen, 2 Nemotron)
+    echo "Running experiment with tag nemotron_buyers-mixed_sellers-seller_comms-${i}"
     python src/continuous_double_auction/simulation.py \
-        --buyer_models claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest claude-3-7-sonnet-latest \
-        --seller_models gpt-4.1 gpt-4.1 gpt-4.1 claude-3-7-sonnet-latest claude-3-7-sonnet-latest \
+        --buyer_models "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" "$NEMOTRON" \
+        --seller_models "$QWEN" "$QWEN" "$QWEN" "$NEMOTRON" "$NEMOTRON" \
         --seller_comms_enabled \
-        --tag "claude_buyers-mixed_sellers-seller_comms-${i}"
+        --tag "nemotron_buyers-mixed_sellers-seller_comms-${i}"
 done
 
 echo "Seller mix experiment (with comms) completed"

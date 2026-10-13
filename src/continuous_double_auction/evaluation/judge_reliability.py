@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
+import os
 from pathlib import Path
 import random
 from typing import Any
@@ -14,14 +15,19 @@ from tqdm import tqdm
 from reliabilipy import reliability_analysis
 
 from src.continuous_double_auction.util.json_util import extract_json
-from src.continuous_double_auction.util.misc import get_client, parse_agent_reasoning_log
+from src.continuous_double_auction.util.misc import get_client, load_local_env, parse_agent_reasoning_log
 from src.resources.model_wrappers import ModelWrapper
 
 N_SAMPLES = 500
 N_REPEATS = 10
 MAX_WORKERS = 10
-EVAL_MODEL = "gpt-4.1-mini"
 EVAL_TEMPERATURE = 0.1
+
+def eval_model_name() -> str:
+    load_local_env()
+    if os.getenv("NVIDIA_API_KEY"):
+        return os.getenv("NIM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+    return os.getenv("EVAL_MODEL", "nvidia/nemotron-3.5-lightning:free")
 
 @backoff.on_exception(
     backoff.expo,
@@ -42,7 +48,7 @@ def perform_single_eval(client: ModelWrapper, rendered_prompt: str) -> tuple[dic
 
 def run_llm_eval_on_samples(sampled_reasoning_logs: list[dict[str, Any]], seed: int) -> tuple[list[int], list[dict[str, Any]]]:
     """Run LLM evaluation on a list of sampled reasoning logs."""
-    client = get_client(EVAL_MODEL, temperature=EVAL_TEMPERATURE, seed=seed)
+    client = get_client(eval_model_name(), temperature=EVAL_TEMPERATURE, seed=seed)
     jinja_env = Environment(
         loader=FileSystemLoader(searchpath=Path(__file__).parent.parent / "prompt_templates"),
         autoescape=select_autoescape(['html', 'xml', 'jinja2'])

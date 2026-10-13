@@ -1,4 +1,5 @@
 import argparse
+import os
 from datetime import datetime
 from typing import Any
 
@@ -7,9 +8,13 @@ from src.continuous_double_auction.identities import get_random_agent_names, get
 from src.continuous_double_auction.evaluation.evaluate import compute_metrics_for_exp_dir, write_metrics_to_file
 from src.continuous_double_auction.market.market import Market
 from src.continuous_double_auction.market.agents import LMSeller
-from src.continuous_double_auction.cda_types import SUPPORTED_MODELS, ExperimentParams
+from src.continuous_double_auction.cda_types import ExperimentParams
 from src.continuous_double_auction.util.logging_util import ExperimentLogger
-from src.continuous_double_auction.util.misc import get_client, initialize_market
+from src.continuous_double_auction.util.misc import get_client, initialize_market, load_local_env
+from src.resources.model_wrappers import is_ollama_model
+
+load_local_env()
+os.environ.setdefault("WANDB_MODE", "disabled")
 
 from tqdm import tqdm
 
@@ -31,6 +36,7 @@ def run_simulation(params: ExperimentParams):
     buyer_companies = get_random_buyer_company_names(num_buyers)
     seller_companies = get_random_seller_company_names(num_sellers)
     n_claude_agents = 0
+    n_ollama_agents = 0
 
     buyers = []
     for i in range(num_buyers):
@@ -46,6 +52,8 @@ def run_simulation(params: ExperimentParams):
             ))
             if buyer_model.startswith("claude"):
                 n_claude_agents += 1
+            if is_ollama_model(buyer_model):
+                n_ollama_agents += 1
         else:
             buyers.append(ZIPBuyer(
                 id=f"Buyer {buyer_names[i]}",
@@ -67,6 +75,8 @@ def run_simulation(params: ExperimentParams):
         ))
         if seller_model.startswith("claude"):
             n_claude_agents += 1
+        if is_ollama_model(seller_model):
+            n_ollama_agents += 1
 
     # Add the ids to the logger metadata
     logger.metadata["buyer_ids"] = [buyer.id for buyer in buyers]
@@ -74,15 +84,25 @@ def run_simulation(params: ExperimentParams):
 
     # Initialize overseer agent if oversight is enabled
     if params.oversight_enabled:
+        if os.getenv("NVIDIA_API_KEY"):
+            overseer_model = os.getenv("NIM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+        else:
+            overseer_model = os.getenv("OVERSEER_MODEL", "nvidia/nemotron-3.5-lightning:free")
         overseer = MessageOverseer(
-            client=get_client(model="gpt-4.1-mini", temperature=0),
+            client=get_client(model=overseer_model, temperature=0),
             logger=logger,
         )
     else:
         overseer = None
     
     # Initialize the market
-    market = Market(sellers=sellers, buyers=buyers, overseer=overseer, n_claude_agents=n_claude_agents)
+    market = Market(
+        sellers=sellers,
+        buyers=buyers,
+        overseer=overseer,
+        n_claude_agents=n_claude_agents,
+        n_ollama_agents=n_ollama_agents,
+    )
 
     # Set initial orders (if specified in params)
     if params.initial_condition:
@@ -117,6 +137,8 @@ def run_simulation(params: ExperimentParams):
 
 
 def log_metrics_to_wandb(params: ExperimentParams, run_name: str, metrics: dict[str, Any]):
+    if os.getenv("WANDB_MODE", "disabled") == "disabled":
+        return
     run = wandb.init(entity="spar-llm-collusion",
             project="data",
             name=run_name,
@@ -165,17 +187,15 @@ if __name__ == "__main__":
         "--seller_models", 
         type=str,
         nargs="+",
-        help="Models to use for sellers", 
-        choices=SUPPORTED_MODELS,
-        default=["gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1"],
+        help="Models to use for sellers",
+        default=[os.getenv("AGENT_MODEL", "qwen2.5:14b")] * 5,
     )
     parser.add_argument(
         "--buyer_models", 
         type=str,
         nargs="+",
         help="Models to use for buyers",
-        choices=SUPPORTED_MODELS,
-        default=["gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1"],
+        default=[os.getenv("AGENT_MODEL", "qwen2.5:14b")] * 5,
     )
     parser.add_argument(
         "--seller_prompt_template",

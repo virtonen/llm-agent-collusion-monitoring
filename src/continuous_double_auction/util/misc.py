@@ -1,13 +1,50 @@
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 import numpy as np
-from src.resources.model_wrappers import ModelWrapper, OpenAIClient, AnthropicClient, GoogleClient
+from src.resources.model_wrappers import (
+    ModelWrapper,
+    OpenAIClient,
+    AnthropicClient,
+    GoogleClient,
+    OpenRouterClient,
+    OllamaModelWrapper,
+    NvidiaClient,
+    is_ollama_model,
+    is_nvidia_nim_model,
+)
+
+
+def load_local_env() -> None:
+    """Load KEY=VALUE pairs from the repo .env without overriding existing variables."""
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[3] / ".env",
+    ]
+    for env_path in candidates:
+        if not env_path.is_file():
+            continue
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("'").strip('"')
+            if key and key not in os.environ:
+                os.environ[key] = value
+        return
 
 
 def get_client(model: str, temperature: float, **kwargs) -> ModelWrapper:
+    load_local_env()
+    if is_ollama_model(model):
+        return OllamaModelWrapper(model, temperature=temperature, **kwargs)
+    if is_nvidia_nim_model(model):
+        return NvidiaClient(model, temperature=temperature, **kwargs)
     if model.startswith("gpt"):
         client = OpenAIClient(model, 
                               response_format={"type": "json_object"},
@@ -22,7 +59,7 @@ def get_client(model: str, temperature: float, **kwargs) -> ModelWrapper:
                               temperature=temperature,
                               **kwargs)
     else:
-        raise ValueError(f"Unknown model: {model}")
+        client = OpenRouterClient(model, temperature=temperature, **kwargs)
     return client
 
 

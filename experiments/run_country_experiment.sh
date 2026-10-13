@@ -11,8 +11,8 @@ python -m src.continuous_double_auction.experiments.country_experiment \
   --seller_valuation 80 \
   --num_buyers 5 \
   --num_sellers 5 \
-  --seller_model gpt-4.1 \
-  --buyer_model gpt-4.1 \
+  --seller_model qwen2.5:14b \
+  --buyer_model qwen2.5:14b \
   --rounds 30 \
   --temperature 0.7 \
   --seller_comms_enabled \

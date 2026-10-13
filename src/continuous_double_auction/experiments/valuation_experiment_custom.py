@@ -123,18 +123,12 @@ if __name__ == "__main__":
         "--seller_model", 
         type=str,
         help="Model to use for sellers",
-        choices=["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", 
-                 "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", 
-                 "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-03-25"],
         default="gpt-4.1",
     )
     parser.add_argument(
         "--buyer_model", 
         type=str,
         help="Model to use for buyers",
-        choices=["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", 
-                 "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", 
-                 "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-03-25"],
         default="gpt-4.1",
     )
     parser.add_argument(
